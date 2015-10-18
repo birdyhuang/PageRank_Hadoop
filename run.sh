@@ -6,4 +6,4 @@
 #########################################################################
 #!/bin/bash
 gradle jar
-hadoop jar build/libs/Gradle_PageRank.jar input/ output/ >> log.txt
+hadoop jar build/libs/Gradle_PageRank.jar input/small.txt output/ >> log.txt

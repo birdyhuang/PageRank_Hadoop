@@ -2,9 +2,9 @@ SUMMARY FILE
 
 Number of nodes:                                   93                  
 Number of iterations:                              17                  
-Total excution time(us):                           20641               
-Execution time for the first 10 iterations:        1445157163768       
-Average time/iteration:                            1214.17651          
+Total execution time(us):                          20971               
+Execution time for the first 10 iterations(us):    12881               
+Average time/iteration:                            1233.58826          
 Number of edges:                                   195                 
 Min out-degree node:                               NodeID: 30212858968080788529425138860488382595        Out-degree: 0    
 Max out-degree node:                               NodeID: 223298989353073294455240222552597284702       Out-degree: 5    
@@ -21,4 +21,3 @@ Average out-degree:                                2.09677
 17649598783482525745073710167618606107             0.67693             
 97668020538124808838065356267872887871             0.59144             
 133772998861810280463554697803246893667            0.51346             
-

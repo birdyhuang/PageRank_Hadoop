@@ -112,9 +112,7 @@ public class PageRank {
             /* if no other nodes refer to this node,
              *  then this node's pagerank is 0
              */
-//            if (pr != 0.0f) {
-                pr = 1-d + d*pr;
-//            }
+             pr = 1-d + d*pr;
 
             /* Key: fromID  Value: PR,toID1 toID2 ... toIDn */
             context.write(key, new Text(pr + "," + toIDs));
@@ -274,7 +272,8 @@ public class PageRank {
         }
     }
     /* Summary info of the graphs */
-    public static void summary(long time, long ten) throws IOException {
+    public static void summary(long start, long ten, long end) throws IOException {
+        long time = end - start;
         long numEdges = 0;
         float avg;
         long min = Long.MAX_VALUE, max = Long.MIN_VALUE;
@@ -287,11 +286,11 @@ public class PageRank {
         f.format("SUMMARY FILE\n\n");
         f.format("%-50s %-20d\n", "Number of nodes:", graph.size());
         f.format("%-50s %-20d\n", "Number of iterations:", iteration);
-        f.format("%-50s %-20d\n", "Total excution time(us):", time);
+        f.format("%-50s %-20d\n", "Total execution time(us):", time);
         if (ten == 0) {
             f.format("%-50s\n", "Execution time for the first 10 iterations: less than 10 iterations");
         } else {
-            f.format("%-50s %-20d\n", "Execution time for the first 10 iterations:", ten);
+            f.format("%-50s %-20d\n", "Execution time for the first 10 iterations(us):", ten - start);
         }
         f.format("%-50s %-20.5f\n", "Average time/iteration:", (float)time/iteration);
         for (Map.Entry<String, ArrayList<String>> entry : graph.entrySet()) {
@@ -381,7 +380,7 @@ public class PageRank {
         /* end */
         long end = System.currentTimeMillis();
 
-        summary(end - start, ten);
+        summary(start, ten, end);
 
         System.exit(0);
     }
