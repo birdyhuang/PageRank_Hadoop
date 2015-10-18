@@ -10,13 +10,14 @@ import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 public class PageRank {
 
     public static final String HDFS_PATH = "hdfs:///user/peng/";
     public static final String OUTPUT_PREFIX = "output";
+    public static final String SUMMARY_FILE = "summary.txt";
+    public static final int TOP = 10;
 
     private static float d = 0.85f; // damping factor
     private static float delta = 0.001f; // convergence
@@ -27,25 +28,25 @@ public class PageRank {
     public static HashMap<String, Float> newPR = new HashMap<String, Float>();  // pagerank of previous iteration
     public static HashMap<String, Float> oldPR = newPR; // pagerank of this iteration
 
-    public static void println(String a) {
-        System.out.println(a);
-    }
-    public static void print(HashMap<String, Float> map) {
-        for (Map.Entry<String, Float> entry : map.entrySet()) {
-            println("map:"+entry.getKey()+":"+entry.getValue());
-        }
+    public static HashMap<String, ArrayList<String>> graph = new HashMap<String, ArrayList<String>>();
+
+    private static void println(String str) {
+        System.out.println(str);
     }
 
-    // mapper to of first round
+    /* mapper to of first round */
     public static class PageRankMapperOne extends Mapper<LongWritable, Text, Text, Text> {
 
         public void map(LongWritable key, Text value, Context context)
                 throws IOException, InterruptedException {
 
+            ArrayList<String> neighbours = new ArrayList<String>();
+
             String line = value.toString();
 
-            // fromID toID1 toID2 toID3 ... toIDn
-            // fromID null
+            /* fromID toID1 toID2 toID3 ... toIDn
+             * fromID null
+             */
             String[] lineSplit = line.split("\\s+");
             String fromID = lineSplit[0];
 
@@ -57,26 +58,33 @@ public class PageRank {
             if (numOutLinks == 0) {
                 sb.append("*");
             } else {
-//              int index = line.indexOf(" ");
-//              String toIDs = line.substring(index+1);
                 for (int i = 1; i < lineSplit.length; i++) {
-                    // Collect each edge
-                    // Key: toID    Value: fromID PR numOutLinks
-                    context.write(new Text(lineSplit[i]), new Text(fromID + " " + initPR + " " + numOutLinks));
+                    /* collect each edge
+                     * Key: toID        Value: fromID PR numOutLinks
+                     */
+                    context.write(new Text(lineSplit[i]),
+                            new Text(fromID + " " + initPR + " " + numOutLinks));
                     sb.append(lineSplit[i] + " ");
+                    neighbours.add(lineSplit[i]);
                 }
             }
+            /* record the adjacent list */
+            if (graph.containsKey(fromID)) {
+                graph.get(fromID).addAll(neighbours);
+            } else {
+                graph.put(fromID, neighbours);
+            }
 
-            // collect all the outLinks from fromID
-            // Key: fromID      Value: |PR,toID1 toID2 ...
-            // Key: fromID      Value: |PR,*
+            /* collect all the outLinks from fromID
+             * Key: fromID      Value: |PR,toID1 toID2 ...
+             * Key: fromID      Value: |PR,*
+             */
             context.write(new Text(fromID), new Text(sb.toString()));
-//            context.write(new Text(fromID), new Text("|"+toIDs));
 
         }   // map()
     }   // MapperOne
 
-    // reducer to construct the adjacent list
+    /* reducer to construct the adjacent list */
     public static class PageRankReducer extends Reducer<Text, Text, Text, Text> {
 
         public void reduce(Text key, Iterable<Text> values, Context context)
@@ -85,80 +93,70 @@ public class PageRank {
             float pr = 0.0f;
             String toIDs = null;
 
-            // Iterate all Text/Text records from the mapper
-//            while (value.hasNext()) {
-//                String next = value.next().toString();
-//                // Value: |PR,toID1 toID2 ... toIDn
-//                if (next.startsWith("|")) {
-//                    sb.append(next.substring(1));
-//                    continue;
-//                }
-//                // Value: fromID PR outLinks
-//                String[] split = next.split("\\s+");
-//                pr += Float.valueOf(split[1]) / Integer.valueOf(split[2]);
-//            }
+            /* Iterate all Text/Text records from the mapper */
             for (Text val : values) {
                 String v = val.toString();
-                // Value: |PR,toID1 toID2 ... toIDn
-                // Value: |PR,*
+                /* Value: |PR,toID1 toID2 ... toIDn
+                 * Value: |PR,*
+                 */
                 if (v.startsWith("|")) {
                     int index = v.indexOf(",");
-//                    pr += Float.valueOf(v.substring(1, index));
                     toIDs = v.substring(index+1);  // get outLinks
                     continue;
                 }
-                // Value: fromID PR numOutLinks
+                /* Value: fromID PR numOutLinks */
                 String[] split = v.split("\\s+");
                 pr += Float.valueOf(split[1]) / Integer.valueOf(split[2]);
             }
 
-            if (pr != 0.0f) {
+            /* if no other nodes refer to this node,
+             *  then this node's pagerank is 0
+             */
+//            if (pr != 0.0f) {
                 pr = 1-d + d*pr;
-            }
+//            }
 
-            // Key: fromID  Value: PR,toID1 toID2 ... toIDn
+            /* Key: fromID  Value: PR,toID1 toID2 ... toIDn */
             context.write(key, new Text(pr + "," + toIDs));
             newPR.put(key.toString(), pr);
 
         }   // reduce()
     }   // ReducerOne
 
-    // mapper to iteratively compute the pagerank
+    /* mapper to iteratively compute the pagerank */
     public static class PageRankMapperTwo extends Mapper<LongWritable, Text, Text, Text> {
 
         public void map(LongWritable key, Text value, Context context)
                 throws IOException, InterruptedException {
 
-            // Input
-            // Value: fromID    PR,toID1 toID2 ... toIDn
-            // Value: fromID    PR,*
+            /* Input
+             * Value: fromID    PR,toID1 toID2 ... toIDn
+             * Value: fromID    PR,*
+             */
             String line = value.toString();
 
             String[] lineSplit = line.split(",");
             String[] id_pr = lineSplit[0].split("\\s+");
 
-            // get the fromID
-//            String fromID = line.substring(0, index);
+            /* get the fromID */
             String fromID = id_pr[0];
 
-//            String[] lineSplit = line.substring(index+1).split(",");
-
-            // get its pr
-//            String pr = lineSplit[0];
+            /* get its pr */
             String pr = id_pr[1];
 
-            // get its outLinks
+            /* get its outLinks */
             String[] toIDs = lineSplit[1].split("\\s+");
             if (!toIDs[0].equals("*")) {
                 long numOutLinks = toIDs.length;
 
                 for (String toID : toIDs) {
-                    // Output
-                    // Key: toID        Value: fromID PR numOutLinks
+                    /* Output
+                     * Key: toID        Value: fromID PR numOutLinks
+                     */
                     context.write(new Text(toID), new Text(fromID+" "+pr+" "+numOutLinks));
                 }
-                // collect all the toIDs from fromID
             }
+            /* collect all the toIDs from fromID */
             context.write(new Text(fromID), new Text("|"+pr+","+lineSplit[1]));
 
         }   // map()
@@ -168,6 +166,7 @@ public class PageRank {
                                        String outputPath)
             throws IOException, ClassNotFoundException, InterruptedException {
 
+        /* update the PageRank Map */
         oldPR = newPR;
         newPR = new HashMap<String, Float>();
 
@@ -186,8 +185,8 @@ public class PageRank {
         FileInputFormat.setInputPaths(job, new Path(inputPath));
         FileOutputFormat.setOutputPath(job, new Path(outputPath));
 
-        println("Round "+(iteration+1)+" input:"+inputPath);
-        println("Round "+(iteration+1)+" output:"+outputPath);
+//        println("Round "+(iteration+1)+" input:"+inputPath);
+//        println("Round "+(iteration+1)+" output:"+outputPath);
 
         if (!job.waitForCompletion(true)) {
             System.err.println("Round "+(iteration+1)+" cannot finish");
@@ -196,55 +195,134 @@ public class PageRank {
 
         System.out.println("Round "+(iteration+1)+" finished");
 
-        return isConverged(inputPath, outputPath);
+        return isConverged();
     }
 
-    private static boolean isConverged(String prev, String cur) throws IOException {
-
-        float max = 0.0f;
-
-//        FileReader frPrev = new FileReader(HDFS_PATH + prev);
-//        FileReader frCur = new FileReader(HDFS_PATH + cur);
-////        FileReader frCur = new FileReader(HDFS_PATH_OUTPUT+cur.getName());
-//
-//        BufferedReader brp = new BufferedReader(frPrev);
-//        BufferedReader brc = new BufferedReader(frCur);
-//
-////        FileSystem fs = FileSystem.get(URI.create(prev.toString()), new Configuration());
-////        BufferedReader brp = new BufferedReader(new InputStreamReader(fs.open(prev)));
-////        BufferedReader brc = new BufferedReader(new InputStreamReader(fs.open(cur)));
-//
-//        String linep, linec;
-//
-//
-//        while ((linep = brp.readLine()) != null && (linec = brc.readLine()) != null) {
-//            max = Math.max(max, compareByLine(linep, linec));
-//        }
+    /* Check the convergence */
+    private static boolean isConverged() throws IOException {
 
         for (Map.Entry<String, Float> entry : newPR.entrySet()) {
             String id = entry.getKey();
             Float f = entry.getValue();
-//            max = Math.max(max, Math.abs(f - oldPR.get(id)));
-//            println(id+":"+f);
             if (Math.abs(f - oldPR.get(id)) > delta) {
                 return false;
             }
         }
 
-//        return max <= delta;
+        /* differences of all prev & cur prs are ≤ delta */
         return true;
     }
 
-    private static float compareByLine(String a, String b) {
+    public static class Node implements Comparable<Node>{
+        private String id = null;
+        private float pr = 0.0f;
 
-        // fromID PR,toID1 toID2 ... toIDn
-        String[] aSplit = a.split(",");
-        float pra = Float.valueOf(aSplit[0].split("\\s+")[1]);
+        public Node(String id, float pr) {
+            this.id = id;
+            this.pr = pr;
+        }
 
-        String[] bSplit = b.split(",");
-        float prb = Float.valueOf(bSplit[0].split("\\s+")[1]);
+        public float getPr() {
+            return pr;
+        }
+        public String getId() {
+            return id;
+        }
+        public void replace(Node newNode) {
+            pr = newNode.getPr();
+            id = newNode.getId();
+        }
 
-        return Math.abs(pra - prb);
+        @Override
+        public int compareTo(Node node) {
+            return (int) ((node.getPr() - pr)*10000);
+        }
+    }
+    public static class Top {
+        Node min;
+        Node[] nodes;
+        int size;
+
+        public Top() {
+            min = new Node(null, Float.MAX_VALUE);
+            nodes = new Node[TOP];
+            size = 0;
+        }
+
+        private Node findMin() {
+            min = nodes[0];
+            for (int i = 1; i < TOP; i ++) {
+                if (nodes[i].getPr() < min.getPr()) {
+                    min = nodes[i];
+                }
+            }
+            return min;
+        }
+        public void insert(Node newNode) {
+            if (size == TOP) {
+                if (newNode.getPr() > min.getPr()) {
+                    min.replace(newNode);
+                    min = findMin();
+                }
+            } else {
+                nodes[size] = newNode;
+                if (min.getPr() > newNode.getPr()) {
+                    min = newNode;
+                }
+                size ++;
+            }
+        }
+    }
+    /* Summary info of the graphs */
+    public static void summary(long time, long ten) throws IOException {
+        long numEdges = 0;
+        float avg;
+        long min = Long.MAX_VALUE, max = Long.MIN_VALUE;
+        String minNode=null, maxNode=null;
+
+        Top top = new Top();
+
+        Formatter f = new Formatter(SUMMARY_FILE);
+
+        f.format("SUMMARY FILE\n\n");
+        f.format("%-50s %-20d\n", "Number of nodes:", graph.size());
+        f.format("%-50s %-20d\n", "Number of iterations:", iteration);
+        f.format("%-50s %-20d\n", "Total excution time(us):", time);
+        if (ten == 0) {
+            f.format("%-50s\n", "Execution time for the first 10 iterations: less than 10 iterations");
+        } else {
+            f.format("%-50s %-20d\n", "Execution time for the first 10 iterations:", ten);
+        }
+        f.format("%-50s %-20.5f\n", "Average time/iteration:", (float)time/iteration);
+        for (Map.Entry<String, ArrayList<String>> entry : graph.entrySet()) {
+            ArrayList<String> list = entry.getValue();
+            numEdges += list.size();
+            if (min > list.size()) {
+                min = list.size();
+                minNode = entry.getKey();
+            }
+            if (max < list.size()) {
+                max = list.size();
+                maxNode = entry.getKey();
+            }
+            Node node = new Node(entry.getKey(), newPR.get(entry.getKey()));
+            top.insert(node);
+        }
+        avg = (float)numEdges / graph.size();
+        f.format("%-50s %-20d\n", "Number of edges:", numEdges);
+        f.format("%-50s NodeID: %-45s Out-degree: %-5d\n", "Min out-degree node:", minNode, min);
+        f.format("%-50s NodeID: %-45s Out-degree: %-5d\n", "Max out-degree node:", maxNode, max);
+        f.format("%-50s %-20.5f\n", "Average out-degree:", avg);
+
+        Arrays.sort(top.nodes);
+        f.format("\n");
+        f.format("----------------------------TOP 10 PageRank Nodes---------------------------\n");
+        for (int i = 0; i < TOP; i ++) {
+            f.format("%-50s %-20.5f\n", top.nodes[i].getId(), top.nodes[i].getPr());
+        }
+
+        f.flush();
+        f.close();
     }
 
     public static void main(String[] args) throws IOException, ClassNotFoundException, InterruptedException {
@@ -271,10 +349,13 @@ public class PageRank {
         FileInputFormat.setInputPaths(job, new Path(args[0]));
         FileOutputFormat.setOutputPath(job, new Path(args[1] + OUTPUT_PREFIX+ 1));
 
+        /* start */
+        long start = System.currentTimeMillis();
+
         if (!job.waitForCompletion(true)) {
             System.err.println("Cannot finish the first round job");
         } else {
-            System.out.println("First round job finished");
+            System.out.println("Round 1 finished");
         }
         iteration ++;
 
@@ -285,14 +366,23 @@ public class PageRank {
         job.setMapOutputKeyClass(Text.class);
         job.setMapOutputValueClass(Text.class);
 
+        long ten = 0;
+
         while (!converged) {
             converged = runIteration(args[1] + OUTPUT_PREFIX + iteration,
                                      args[1]+ OUTPUT_PREFIX + (iteration+1));
-//            converged = runIteration(new Path(args[1]+iteration),
-//                                     new Path(args[1]+(iteration+1)));
             iteration ++;
+            if (iteration == 10) {
+                ten = System.currentTimeMillis();
+            }
         }
         System.out.println("Page rank calculation converged!!! All jobs finished");
+
+        /* end */
+        long end = System.currentTimeMillis();
+
+        summary(end - start, ten);
+
         System.exit(0);
     }
 }
