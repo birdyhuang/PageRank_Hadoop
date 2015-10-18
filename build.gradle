@@ -1,0 +1,12 @@
+apply plugin: 'java'
+
+jar {
+	manifest {
+		attributes("Main-Class": "org.cloudcomputing.pagerank.PageRank")
+	}
+}
+dependencies {
+	compile files("/usr/hadoop/share/hadoop/common/hadoop-common-2.7.1.jar:/usr/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-client-core-2.7.1.jar:/usr/hadoop/share/hadoop/common/lib/commons-cli-1.2.jar")
+	runtime files("/usr/hadoop/share/hadoop/common/hadoop-common-2.7.1.jar:/usr/hadoop/share/hadoop/mapreduce/hadoop-mapreduce-client-core-2.7.1.jar:/usr/hadoop/share/hadoop/common/lib/commons-cli-1.2.jar")
+}
+
