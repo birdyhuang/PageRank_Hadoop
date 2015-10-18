@@ -1,17 +1,24 @@
 ## README.md
 
-#### 1.Set up the Gradle environment
+#### 1. Set up the Gradle environment
 ``` shell
 sudo apt-get updatesudo
 apt-get install gradle 
 ```
+add the gradle/bin to the $PATH
 
-#### 2.Start the hadoop cluster
+#### 2. Download the resources
+```
+git clone https://github.com/birdyhuang/PageRank_Hadoop.git
+cd PageRank
+```
+
+#### 3. Start the hadoop cluster
 ``` shell
 start-dfs.sh
 ```
 
-#### 3.Run the code
+#### 4.Run the code
 ``` shell
 ./run.sh
 ```
